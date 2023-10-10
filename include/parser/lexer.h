@@ -12,5 +12,6 @@ lexer_t *lexer_create(const char *, size_t sz);
 void lexer_destroy(lexer_t *);
 
 token_t *lexer_next(lexer_t *);
+int lexer_peek(lexer_t *, size_t);
 
 #endif // PARSER_LEXER_H_
