@@ -1,11 +1,11 @@
 include ./flags.mk
 
-SRC=$(wildcard src/*.c)
+SRC=$(wildcard src/*.c) $(wildcard src/**/*.c)
 SRC_MK=$(SRC:.c=.d)
 OBJ=$(SRC:.c=.o)
 OUT=compiler
 
-BUILDFILES=$(OBJ) $(OUT)
+BUILDFILES=$(OBJ) $(SRC_MK) $(OUT)
 
 all: $(OUT)
 
