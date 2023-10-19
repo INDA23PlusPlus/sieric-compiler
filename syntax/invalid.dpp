@@ -1,0 +1,9 @@
+fn main() {
+  let hEj88_k = 8;
+  print(hEj88_k);
+  if 4 > 3 {
+    return 1;
+  } else {
+    return 0
+  }
+}
