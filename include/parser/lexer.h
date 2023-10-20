@@ -5,7 +5,7 @@
 #include <parser/token.h>
 
 typedef struct lexer {
-    const char *start, *end;
+    const unsigned char *start, *end;
 } lexer_t;
 
 lexer_t *lexer_create(const char *, size_t sz);
