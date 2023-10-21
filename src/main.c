@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
     parser_t *parser = parser_new(lexer);
     ast_node_t *root = parser_parse(parser);
 
-    ast_print(root);
+    if(!parser->error) ast_print(root);
 
     lexer_free(lexer);
     parser_free(parser);

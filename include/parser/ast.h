@@ -57,7 +57,7 @@ typedef struct ast_node_tu {
 typedef struct ast_node_fn_defn {
     ast_node_t hdr;
 
-    const char *name;
+    char *name;
     size_t name_sz;
 
     /** vector of ast_node_t of statement types */
@@ -69,20 +69,20 @@ typedef struct ast_node_fn_defn {
 typedef struct ast_node_ident {
     ast_node_t hdr;
 
-    const char *name;
-    const size_t name_sz;
+    char *name;
+    size_t name_sz;
 } ast_node_ident_t;
 
 typedef struct ast_node_const {
     ast_node_t hdr;
 
-    const uint64_t value;
+    uint64_t value;
 } ast_node_const_t;
 
 typedef struct ast_node_expr_binary {
     ast_node_t hdr;
 
-    const enum expr_binary_type type;
+    enum expr_binary_type type;
     /** ast_node_t of an expression type (or const/ident) */
     struct ast_node *left, *right;
 } ast_node_expr_binary_t;
@@ -90,7 +90,7 @@ typedef struct ast_node_expr_binary {
 typedef struct ast_node_expr_unary {
     ast_node_t hdr;
 
-    const enum expr_unary_type type;
+    enum expr_unary_type type;
     /** ast_node_t of an expression type (or const/ident) */
     struct ast_node *op;
 } ast_node_expr_unary_t;

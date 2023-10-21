@@ -7,11 +7,14 @@
 typedef struct parser {
     lexer_t *lexer;
     ast_node_t *root;
+    int error;
 } parser_t;
 
 parser_t *parser_new(lexer_t *);
 ast_node_t *parser_parse(parser_t *);
 void parser_free(parser_t *);
+
+int parser_eat(parser_t *, enum token_type);
 
 void ast_print(ast_node_t *);
 

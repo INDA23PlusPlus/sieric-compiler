@@ -12,12 +12,11 @@ lexer_t *lexer_new(const unsigned char *buf, size_t sz) {
     lexer_t *lexer = malloc(sizeof(lexer_t));
     lexer->start = buf;
     lexer->end = buf + sz;
-    lexer->token = malloc(sizeof(token_t));
+    memset(&lexer->token, 0, 2*sizeof(token_t));
     return lexer;
 }
 
 void lexer_free(lexer_t *l) {
-    free(l->token);
     free(l);
 }
 
@@ -26,7 +25,13 @@ int lexer_peek(lexer_t *l, size_t off) {
     else return -1;
 }
 
+/* UB to call multiple times */
+token_t *lexer_unget(lexer_t *l) {
+    return memcpy(&l->token, &l->prev, sizeof(token_t));
+}
+
 token_t *lexer_next(lexer_t *l) {
+    memcpy(&l->prev, &l->token, sizeof(token_t));
     for(; l->start < l->end; l->start++) {
         unsigned char c = *l->start;
         if(('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == '_')
@@ -37,7 +42,7 @@ token_t *lexer_next(lexer_t *l) {
         switch(c) {
 
 /* HACK: really dumb macro to increment l->start */
-#define T(t, sz) l->start += sz, token_init(l->token, l->start - sz, sz, t)
+#define T(t, sz) l->start += sz, token_init(&l->token, l->start - sz, sz, t)
         case ';': case '{': case '}': case '(': case ')': case ',': case '^':
         case '+': case '-': case '*': case '/': case '%': case '~':
             return T(c, 1);
@@ -73,7 +78,7 @@ token_t *lexer_next(lexer_t *l) {
 #undef T
         }
     }
-    return token_init(l->token, l->start, 0, TEOF);
+    return token_init(&l->token, l->start, 0, TEOF);
 }
 
 static const struct {
@@ -99,9 +104,9 @@ static token_t *lexer_read_identifier(lexer_t *l) {
     /* check if identifier is actually a keyword */
     for(size_t i = 0; i < sizeof keywords / sizeof *keywords; i++)
         if(!memcmp(keywords[i].str, orig, MIN(sz, sizeof keywords[i].str)))
-            return token_init(l->token, orig, sz, keywords[i].type);
+            return token_init(&l->token, orig, sz, keywords[i].type);
 
-    return token_init(l->token, orig, sz, TIDENTIFIER);
+    return token_init(&l->token, orig, sz, TIDENTIFIER);
 }
 
 static token_t *lexer_read_constant(lexer_t *l) {
@@ -110,5 +115,5 @@ static token_t *lexer_read_constant(lexer_t *l) {
     for(; l->start < l->end
        && ('0' <= *l->start && *l->start <= '9'); l->start++, sz++);
 
-    return token_init(l->token, orig, sz, TCONSTANT);
+    return token_init(&l->token, orig, sz, TCONSTANT);
 }
