@@ -6,10 +6,11 @@
 
 typedef struct lexer {
     const unsigned char *start, *end;
+    token_t *token;
 } lexer_t;
 
-lexer_t *lexer_create(const char *, size_t sz);
-void lexer_destroy(lexer_t *);
+lexer_t *lexer_new(const unsigned char *, size_t);
+void lexer_free(lexer_t *);
 
 token_t *lexer_next(lexer_t *);
 int lexer_peek(lexer_t *, size_t);

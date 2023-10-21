@@ -4,6 +4,7 @@
 
 #include <parser/token.h>
 #include <parser/lexer.h>
+#include <parser/parser.h>
 
 #define PROGRAM_NAME "compiler"
 
@@ -54,7 +55,7 @@ int main(int argc, char *argv[]) {
     fseek(f, 0, SEEK_END);
     size_t sz = ftell(f);
     rewind(f);
-    char *buf = malloc(sz);
+    unsigned char *buf = malloc(sz);
     if(fread(buf, 1, sz, f) != sz) {
         fprintf(stderr, "Failed to read entire file\n");
         fclose(f);
@@ -63,23 +64,14 @@ int main(int argc, char *argv[]) {
     }
     fclose(f);
 
-    lexer_t *lexer = lexer_create(buf, sz - 1);
+    lexer_t *lexer = lexer_new(buf, sz - 1);
+    parser_t *parser = parser_new(lexer);
+    ast_node_t *root = parser_parse(parser);
 
-    for(;;) {
-        token_t *token = lexer_next(lexer);
+    ast_print(root);
 
-        if(token->type == TEOF) {
-            token_destroy(token);
-            break;
-        }
-
-        printf("type: %s (", token_type_str(token->type));
-        for(size_t i = 0; i < token->sz; i++)
-            putchar(token->start[i]);
-        puts(")");
-    }
-
-    lexer_destroy(lexer);
+    lexer_free(lexer);
+    parser_free(parser);
 ret_free:
     free(buf);
     exit(ret);

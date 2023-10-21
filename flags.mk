@@ -1,7 +1,7 @@
 CC=gcc
 
 CPPFLAGS?=
-CPPFLAGS+=-Iinclude -D_POSIX_C_SOURCE=2
+CPPFLAGS+=-Iinclude -D_POSIX_C_SOURCE=200809L
 
 CFLAGS?=-O2 -g
 CFLAGS+=-Wall -Wextra -MD -std=c99

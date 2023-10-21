@@ -17,18 +17,13 @@ static const unsigned short tokentypeidx[] = {
 #undef T
 };
 
-token_t *token_create(const char *start, size_t sz, enum token_type type) {
-    token_t *token = malloc(sizeof(token_t));
-
+token_t *token_init(token_t *token, const unsigned char *start,
+                    size_t sz, enum token_type type) {
     token->start = start;
     token->sz = sz;
     token->type = type;
 
     return token;
-}
-
-void token_destroy(token_t *token) {
-    free(token);
 }
 
 const char *token_type_str(enum token_type type) {

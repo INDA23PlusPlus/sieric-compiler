@@ -10,12 +10,12 @@ enum token_type {
 };
 
 typedef struct token {
-    char *start;
+    const unsigned char *start;
     size_t sz;
     enum token_type type;
 } token_t;
 
-token_t *token_create(char *start, size_t sz, enum token_type type);
+token_t *token_create(const unsigned char *start, size_t sz, enum token_type type);
 const char *token_type_str(enum token_type);
 
-#endif // PARSER_TOKEN_H_
+#endif /* PARSER_TOKEN_H_ */
