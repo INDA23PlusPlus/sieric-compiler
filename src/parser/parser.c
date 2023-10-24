@@ -11,11 +11,27 @@ static ast_node_stmt_expr_t *parser_parse_stmt_expr(parser_t *);
 static ast_node_stmt_if_t *parser_parse_stmt_if(parser_t *);
 static ast_node_stmt_ret_t *parser_parse_stmt_ret(parser_t *);
 static ast_node_stmt_block_t *parser_parse_stmt_block(parser_t *);
-static ast_node_t *parser_parse_expr(parser_t *);
 static int parser_parse_block(parser_t *, vec_t *);
+
+static ast_node_t *parser_parse_expr(parser_t *);
+static ast_node_t *parser_parse_expr_lor(parser_t *);
+static ast_node_t *parser_parse_expr_land(parser_t *);
+static ast_node_t *parser_parse_expr_bitor(parser_t *);
+static ast_node_t *parser_parse_expr_bitxor(parser_t *);
+static ast_node_t *parser_parse_expr_bitand(parser_t *);
+static ast_node_t *parser_parse_expr_eq(parser_t *);
+static ast_node_t *parser_parse_expr_rel(parser_t *);
+static ast_node_t *parser_parse_expr_add(parser_t *);
+static ast_node_t *parser_parse_expr_mult(parser_t *);
+static ast_node_t *parser_parse_expr_unary(parser_t *);
+static ast_node_t *parser_parse_expr_postfix(parser_t *);
 
 static ast_node_ident_t *ast_node_ident_new(token_t *);
 static ast_node_const_t *ast_node_const_new(token_t *);
+static ast_node_expr_binary_t *ast_node_expr_binary_new(
+    ast_node_t *, ast_node_t *, enum expr_binary_type);
+static ast_node_expr_unary_t *ast_node_expr_unary_new(
+    ast_node_t *, enum expr_unary_type);
 
 static void ast_free(ast_node_t *);
 static void pad_printf(size_t, const char *restrict, ...);
@@ -119,11 +135,13 @@ ret_free:
 static ast_node_stmt_decl_t *parser_parse_stmt_decl(parser_t *p) {
     if(parser_eat(p, TLET)) return NULL;
     if(parser_eat(p, TIDENTIFIER)) return NULL;
+    token_t prev;
+    memcpy(&prev, &p->lexer->token, sizeof(token_t));
     if(parser_eat(p, '=')) return NULL;
 
     ast_node_stmt_decl_t *node = malloc(sizeof(ast_node_stmt_decl_t));
     node->hdr.type = AST_STMT_DECL;
-    node->ident = ast_node_ident_new(&p->lexer->token);
+    node->ident = ast_node_ident_new(&prev);
     node->expr = parser_parse_expr(p);
     if(!node->expr) goto ret_free;
     if(parser_eat(p, ';')) goto ret_free;
@@ -203,34 +221,6 @@ static ast_node_stmt_block_t *parser_parse_stmt_block(parser_t *p) {
     return (void *)node;
 }
 
-/* NOTE: placeholder */
-static ast_node_t *parser_parse_expr(parser_t *p) {
-    token_t *token = &p->lexer->token;
-    enum token_type valid[] = {
-        '(', ')', '+', '-', '*', '/', '%', '<', '>', '&', '|', '^', '~', '!',
-        TLEQ_OP, TGEQ_OP, TEQ_OP, TNEQ_OP, TLAND_OP, TLOR_OP,
-        TIDENTIFIER, TCONSTANT,
-        ',', /* even more HACK */
-    };
-    for(;;) {
-        lexer_next(p->lexer);
-        int found = 0;
-        for(size_t i = 0; i < sizeof valid / sizeof *valid; ++i)
-            if(token->type == valid[i]) {
-                found = 1;
-                break;
-            }
-        if(!found) break;
-    }
-    lexer_unget(p->lexer);
-
-    ast_node_ident_t *node = malloc(sizeof(ast_node_ident_t));
-    node->hdr.type = AST_IDENT;
-    node->name = strdup("!!TESTING!!");
-    node->name_sz = sizeof("!!TESTING!!") - 1;
-    return (void *)node;
-}
-
 static int parser_parse_block(parser_t *p, vec_t *vec) {
     {
         int err = 0;
@@ -291,6 +281,274 @@ static int parser_parse_block(parser_t *p, vec_t *vec) {
     }
 }
 
+static ast_node_t *parser_parse_expr(parser_t *p) {
+    return parser_parse_expr_lor(p);
+}
+
+static inline ast_node_t *parser_parse_expr_lor(parser_t *p) {
+    ast_node_t *left = parser_parse_expr_land(p);
+    if(!left) return NULL;
+    if(lexer_next(p->lexer)->type != TLOR_OP) {
+        lexer_unget(p->lexer);
+        return left;
+    }
+    ast_node_t *right = parser_parse_expr_lor(p);
+    if(!right) {
+        ast_free(left);
+        return NULL;
+    }
+
+    return (void *)ast_node_expr_binary_new(left, right, EXPR_LOR);
+}
+
+static ast_node_t *parser_parse_expr_land(parser_t *p) {
+    ast_node_t *left = parser_parse_expr_bitor(p);
+    if(!left) return NULL;
+    if(lexer_next(p->lexer)->type != TLAND_OP) {
+        lexer_unget(p->lexer);
+        return left;
+    }
+    ast_node_t *right = parser_parse_expr_land(p);
+    if(!right) {
+        ast_free(left);
+        return NULL;
+    }
+
+    return (void *)ast_node_expr_binary_new(left, right, EXPR_LAND);
+}
+
+static ast_node_t *parser_parse_expr_bitor(parser_t *p) {
+    ast_node_t *left = parser_parse_expr_bitxor(p);
+    if(!left) return NULL;
+    if(lexer_next(p->lexer)->type != '|') {
+        lexer_unget(p->lexer);
+        return left;
+    }
+    ast_node_t *right = parser_parse_expr_bitor(p);
+    if(!right) {
+        ast_free(left);
+        return NULL;
+    }
+
+    return (void *)ast_node_expr_binary_new(left, right, EXPR_BITOR);
+}
+
+static ast_node_t *parser_parse_expr_bitxor(parser_t *p) {
+    ast_node_t *left = parser_parse_expr_bitand(p);
+    if(!left) return NULL;
+    if(lexer_next(p->lexer)->type != '^') {
+        lexer_unget(p->lexer);
+        return left;
+    }
+    ast_node_t *right = parser_parse_expr_bitxor(p);
+    if(!right) {
+        ast_free(left);
+        return NULL;
+    }
+
+    return (void *)ast_node_expr_binary_new(left, right, EXPR_BITXOR);
+}
+
+static ast_node_t *parser_parse_expr_bitand(parser_t *p) {
+    ast_node_t *left = parser_parse_expr_eq(p);
+    if(!left) return NULL;
+    if(lexer_next(p->lexer)->type != '&') {
+        lexer_unget(p->lexer);
+        return left;
+    }
+    ast_node_t *right = parser_parse_expr_bitand(p);
+    if(!right) {
+        ast_free(left);
+        return NULL;
+    }
+
+    return (void *)ast_node_expr_binary_new(left, right, EXPR_BITAND);
+}
+
+static ast_node_t *parser_parse_expr_eq(parser_t *p) {
+    ast_node_t *left = parser_parse_expr_rel(p);
+    enum expr_binary_type type;
+    if(!left) return NULL;
+    switch(lexer_next(p->lexer)->type) {
+    case TEQ_OP:  type = EXPR_EQ; break;
+    case TNEQ_OP: type = EXPR_NEQ; break;
+
+    default:
+        lexer_unget(p->lexer);
+        return left;
+    }
+    ast_node_t *right = parser_parse_expr_eq(p);
+    if(!right) {
+        ast_free(left);
+        return NULL;
+    }
+
+    return (void *)ast_node_expr_binary_new(left, right, type);
+}
+
+static ast_node_t *parser_parse_expr_rel(parser_t *p) {
+    ast_node_t *left = parser_parse_expr_add(p);
+    enum expr_binary_type type;
+    if(!left) return NULL;
+    switch(lexer_next(p->lexer)->type) {
+    case '<':     type = EXPR_LT; break;
+    case '>':     type = EXPR_GT; break;
+    case TLEQ_OP: type = EXPR_LEQ; break;
+    case TGEQ_OP: type = EXPR_GEQ; break;
+
+    default:
+        lexer_unget(p->lexer);
+        return left;
+    }
+    ast_node_t *right = parser_parse_expr_rel(p);
+    if(!right) {
+        ast_free(left);
+        return NULL;
+    }
+
+    return (void *)ast_node_expr_binary_new(left, right, type);
+}
+
+static ast_node_t *parser_parse_expr_add(parser_t *p) {
+    ast_node_t *left = parser_parse_expr_mult(p);
+    enum expr_binary_type type;
+    if(!left) return NULL;
+    switch(lexer_next(p->lexer)->type) {
+    case '+': type = EXPR_ADD; break;
+    case '-': type = EXPR_SUB; break;
+
+    default:
+        lexer_unget(p->lexer);
+        return left;
+    }
+    ast_node_t *right = parser_parse_expr_add(p);
+    if(!right) {
+        ast_free(left);
+        return NULL;
+    }
+
+    return (void *)ast_node_expr_binary_new(left, right, type);
+}
+
+static ast_node_t *parser_parse_expr_mult(parser_t *p) {
+    ast_node_t *left = parser_parse_expr_unary(p);
+    enum expr_binary_type type;
+    if(!left) return NULL;
+    switch(lexer_next(p->lexer)->type) {
+    case '*': type = EXPR_MULT; break;
+    case '/': type = EXPR_DIV; break;
+    case '%': type = EXPR_MOD; break;
+
+    default:
+        lexer_unget(p->lexer);
+        return left;
+    }
+    ast_node_t *right = parser_parse_expr_mult(p);
+    if(!right) {
+        ast_free(left);
+        return NULL;
+    }
+
+    return (void *)ast_node_expr_binary_new(left, right, type);
+}
+
+static ast_node_t *parser_parse_expr_unary(parser_t *p) {
+    enum expr_unary_type type;
+    switch(lexer_next(p->lexer)->type) {
+    case '~': type = EXPR_BITNOT; break;
+    case '!': type = EXPR_LNOT; break;
+
+    default:
+        lexer_unget(p->lexer);
+        return parser_parse_expr_postfix(p);
+    }
+    ast_node_t *op = parser_parse_expr_postfix(p);
+    if(!op) return NULL;
+
+    return (void *)ast_node_expr_unary_new(op, type);
+}
+
+/* function calling is the only "postfix" operator */
+static ast_node_t *parser_parse_expr_postfix(parser_t *p) {
+    token_t *t = lexer_next(p->lexer);
+    token_t prev;
+
+    switch(t->type) {
+    case TCONSTANT:
+        return (void *)ast_node_const_new(t);
+
+    case ')': {
+        ast_node_t *expr = parser_parse_expr(p);
+        parser_eat(p, ')');
+        return expr;
+    }
+
+    default:
+        return NULL;
+
+    case TIDENTIFIER:
+        memcpy(&prev, t, sizeof(token_t));
+        if(lexer_next(p->lexer)->type != '(') {
+            lexer_unget(p->lexer);
+            return (void *)ast_node_ident_new(&prev);
+        }
+        /* this is actually a function call */
+        break;
+    }
+
+    ast_node_expr_call_t *node = malloc(sizeof(ast_node_expr_call_t));
+    node->hdr.type = AST_EXPR_CALL;
+    node->ident = ast_node_ident_new(&prev);
+    node->args = vec_new_free(1, (vec_free_t)ast_free);
+
+    if(lexer_next(p->lexer)->type == ')') return (void *)node;
+    lexer_unget(p->lexer);
+    ast_node_t *expr = parser_parse_expr(p);
+    if(!expr) goto ret_free;
+    vec_push(node->args, expr);
+
+    while(lexer_next(p->lexer)->type != ')') {
+        lexer_unget(p->lexer);
+        if(parser_eat(p, ',')) goto ret_free;
+        if(!(expr = parser_parse_expr(p))) goto ret_free;
+        vec_push(node->args, expr);
+    }
+
+    return (void *)node;
+ret_free:
+    ast_free((void *)node);
+    return NULL;
+}
+
+
+/* NOTE: placeholder */
+static ast_node_t *parser_parse_expr_test(parser_t *p) {
+    token_t *token = &p->lexer->token;
+    enum token_type valid[] = {
+        '(', ')', '+', '-', '*', '/', '%', '<', '>', '&', '|', '^', '~', '!',
+        TLEQ_OP, TGEQ_OP, TEQ_OP, TNEQ_OP, TLAND_OP, TLOR_OP,
+        TIDENTIFIER, TCONSTANT,
+        ',', /* even more HACK */
+    };
+    for(;;) {
+        lexer_next(p->lexer);
+        int found = 0;
+        for(size_t i = 0; i < sizeof valid / sizeof *valid; ++i)
+            if(token->type == valid[i]) {
+                found = 1;
+                break;
+            }
+        if(!found) break;
+    }
+    lexer_unget(p->lexer);
+
+    ast_node_ident_t *node = malloc(sizeof(ast_node_ident_t));
+    node->hdr.type = AST_IDENT;
+    node->name = strdup("!!PRETEND EXPRESSION!!");
+    node->name_sz = sizeof("!!PRETEND EXPRESSION!!") - 1;
+    return (void *)node;
+}
+
 /***** AST functions *****/
 
 static ast_node_ident_t *ast_node_ident_new(token_t *token) {
@@ -312,6 +570,25 @@ static ast_node_const_t *ast_node_const_new(token_t *token) {
         node->value = strtoll(buf, NULL, 10);
         if(errno) perror("strtoull");
     }
+    return node;
+}
+
+static ast_node_expr_binary_t *ast_node_expr_binary_new(
+    ast_node_t *left, ast_node_t *right, enum expr_binary_type type) {
+    ast_node_expr_binary_t *node = malloc(sizeof(ast_node_expr_binary_t));
+    node->hdr.type = AST_EXPR_BINARY;
+    node->left = left;
+    node->right = right;
+    node->type = type;
+    return node;
+}
+
+static ast_node_expr_unary_t *ast_node_expr_unary_new(
+    ast_node_t *op, enum expr_unary_type type) {
+    ast_node_expr_unary_t *node = malloc(sizeof(ast_node_expr_unary_t));
+    node->hdr.type = AST_EXPR_UNARY;
+    node->op = op;
+    node->type = type;
     return node;
 }
 
@@ -341,7 +618,7 @@ static void ast_print_internal(ast_node_t *root, size_t n) {
     switch(root->type) {
     case AST_TU: {
         ast_node_tu_t *node = (void *)root;
-        printf("%sTU\n", pad);
+        printf("%sTranslationUnit\n", pad);
         for(size_t i = 0; i < node->functions->sz; ++i)
             ast_print_internal(vec_get(node->functions, i), n+1);
         break;
