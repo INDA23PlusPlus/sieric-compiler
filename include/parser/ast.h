@@ -14,6 +14,7 @@ AST_STMT_RET,
 AST_STMT_BLOCK,
 AST_EXPR_BINARY,
 AST_EXPR_UNARY,
+/** the only postfix operator is () */
 AST_EXPR_CALL,
 AST_IDENT,
 AST_CONST,
@@ -76,7 +77,7 @@ typedef struct ast_node_ident {
 typedef struct ast_node_const {
     ast_node_t hdr;
 
-    uint64_t value;
+    int64_t value;
 } ast_node_const_t;
 
 typedef struct ast_node_expr_binary {
@@ -98,7 +99,7 @@ typedef struct ast_node_expr_unary {
 typedef struct ast_node_expr_call {
     ast_node_t hdr;
 
-    struct ast_node_ident ident;
+    struct ast_node_ident *ident;
     /** vector ast_node_t of expression types (or const/ident) */
     vec_t *args;
 } ast_node_expr_call_t;
