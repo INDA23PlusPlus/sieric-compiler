@@ -6,7 +6,8 @@
 
 typedef struct lexer {
     const unsigned char *start, *end;
-    token_t token, prev;
+    int unget;
+    token_t token;
 } lexer_t;
 
 lexer_t *lexer_new(const unsigned char *, size_t);

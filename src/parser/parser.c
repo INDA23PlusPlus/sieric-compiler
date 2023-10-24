@@ -9,6 +9,7 @@ static ast_node_stmt_expr_t *parser_parse_stmt_expr(parser_t *);
 static ast_node_stmt_if_t *parser_parse_stmt_if(parser_t *);
 static ast_node_stmt_ret_t *parser_parse_stmt_ret(parser_t *);
 static ast_node_stmt_block_t *parser_parse_stmt_block(parser_t *);
+static ast_node_t *parser_parse_expr(parser_t *);
 static int parser_parse_block(parser_t *, vec_t *);
 
 static ast_node_ident_t *ast_node_ident_new(token_t *);
@@ -89,22 +90,22 @@ static ast_node_fn_defn_t *parser_parse_fn_defn(parser_t *p) {
                 if(parser_eat(p, TIDENTIFIER)) goto ret_free;
                 continue;
             } else {
-                fprintf(stderr, "[Error] Expected 'TCOMMA' or 'TRPAREN' but"
-                        " got '%s'\n",
+                fprintf(stderr, "[Error] Expected token 'TCOMMA' or 'TRPAREN' "
+                        "but got '%s'\n",
                         token_type_str(token->type));
                 p->error = 1;
                 goto ret_free;
             }
         }
     } else {
-        fprintf(stderr, "[Error] Expected 'TIDENTIFIER' or 'TRPAREN' but "
+        fprintf(stderr, "[Error] Expected token 'TIDENTIFIER' or 'TRPAREN' but "
                 "got '%s'\n",
                 token_type_str(token->type));
         p->error = 1;
         goto ret_free;
     }
 
-    parser_parse_block(p, node->body);
+    if(parser_parse_block(p, node->body)) goto ret_free;
 
     return node;
 ret_free:
@@ -113,18 +114,77 @@ ret_free:
 }
 
 static ast_node_stmt_decl_t *parser_parse_stmt_decl(parser_t *p) {
+    if(parser_eat(p, TLET)) return NULL;
+    if(parser_eat(p, TIDENTIFIER)) return NULL;
+    if(parser_eat(p, '=')) return NULL;
+
+    ast_node_stmt_decl_t *node = malloc(sizeof(ast_node_stmt_decl_t));
+    node->hdr.type = AST_STMT_DECL;
+    node->ident = ast_node_ident_new(&p->lexer->token);
+    node->expr = parser_parse_expr(p);
+    if(!node->expr) goto ret_free;
+    if(parser_eat(p, ';')) goto ret_free;
+
+    return node;
+ret_free:
+    ast_free((void *)node);
     return NULL;
 }
 
 static ast_node_stmt_expr_t *parser_parse_stmt_expr(parser_t *p) {
+    ast_node_stmt_expr_t *node = malloc(sizeof(ast_node_stmt_expr_t));
+    node->hdr.type = AST_STMT_EXPR;
+    node->expr = parser_parse_expr(p);
+    if(!node->expr) {
+        free(node);
+        return NULL;
+    }
+    if(parser_eat(p, ';')) goto ret_free;
+
+    return node;
+ret_free:
+    ast_free((void *)node);
     return NULL;
 }
 
 static ast_node_stmt_if_t *parser_parse_stmt_if(parser_t *p) {
+    if(parser_eat(p, TIF)) return NULL;
+
+    ast_node_stmt_if_t *node = malloc(sizeof(ast_node_stmt_if_t));
+    node->hdr.type = AST_STMT_IF;
+    node->condition = parser_parse_expr(p);
+    if(!node->condition) {
+        free(node);
+        return NULL;
+    }
+    node->branch_true = vec_new(1);
+    node->branch_false = vec_new(1);
+
+    if(parser_parse_block(p, node->branch_true)) goto ret_free;
+    if(lexer_next(p->lexer)->type != TELSE) lexer_unget(p->lexer);
+    else if(parser_parse_block(p, node->branch_false)) goto ret_free;
+
+    return node;
+ret_free:
+    ast_free((void *)node);
     return NULL;
 }
 
 static ast_node_stmt_ret_t *parser_parse_stmt_ret(parser_t *p) {
+    if(parser_eat(p, TRETURN)) return NULL;
+
+    ast_node_stmt_ret_t *node = malloc(sizeof(ast_node_stmt_ret_t));
+    node->hdr.type = AST_STMT_RET;
+    node->expr = parser_parse_expr(p);
+    if(!node->expr) {
+        free(node);
+        return NULL;
+    }
+    if(parser_eat(p, ';')) goto ret_free;
+
+    return node;
+ret_free:
+    ast_free((void *)node);
     return NULL;
 }
 
@@ -138,6 +198,29 @@ static ast_node_stmt_block_t *parser_parse_stmt_block(parser_t *p) {
         return NULL;
     }
     return (void *)node;
+}
+
+/* NOTE: placeholder */
+static ast_node_t *parser_parse_expr(parser_t *p) {
+    token_t *token = &p->lexer->token;
+    enum token_type valid[] = {
+        '(', ')', '+', '-', '*', '/', '%', '<', '>', '&', '|', '^', '~', '!',
+        TLEQ_OP, TGEQ_OP, TEQ_OP, TNEQ_OP, TLAND_OP, TLOR_OP,
+        TIDENTIFIER, TCONSTANT,
+        ',', /* even more HACK */
+    };
+    for(;;) {
+        lexer_next(p->lexer);
+        int found = 0;
+        for(size_t i = 0; i < sizeof valid / sizeof *valid; ++i)
+            if(token->type == valid[i]) {
+                found = 1;
+                break;
+            }
+        if(!found) break;
+    }
+    lexer_unget(p->lexer);
+    return (void *)ast_node_ident_new(token);
 }
 
 static int parser_parse_block(parser_t *p, vec_t *vec) {
@@ -234,8 +317,8 @@ void ast_print(ast_node_t *root) {
 }
 
 static void ast_print_internal(ast_node_t *root, size_t n) {
-    char pad[128] = {' '};
-    if(n > sizeof pad) return;
+    char pad[n+1];
+    for(size_t i = 0; i < n; ++i) pad[i] = ' ';
     pad[n] = '\0';
 
     switch(root->type) {
@@ -263,5 +346,6 @@ static void ast_print_internal(ast_node_t *root, size_t n) {
     /* TODO */
     default:
         printf("%swhatever\n", pad);
+        break;
     }
 }

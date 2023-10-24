@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
+/* #define LEXER_DEBUG */
 
 static token_t *lexer_read_identifier(lexer_t *l);
 static token_t *lexer_read_constant(lexer_t *l);
@@ -12,7 +12,8 @@ lexer_t *lexer_new(const unsigned char *buf, size_t sz) {
     lexer_t *lexer = malloc(sizeof(lexer_t));
     lexer->start = buf;
     lexer->end = buf + sz;
-    memset(&lexer->token, 0, 2*sizeof(token_t));
+    lexer->unget = 0;
+    memset(&lexer->token, 0, sizeof(token_t));
     return lexer;
 }
 
@@ -27,11 +28,18 @@ int lexer_peek(lexer_t *l, size_t off) {
 
 /* UB to call multiple times */
 token_t *lexer_unget(lexer_t *l) {
-    return memcpy(&l->token, &l->prev, sizeof(token_t));
+#ifdef LEXER_DEBUG
+    printf("\033[31mlexer_unget\033[m: %s\n", token_type_str(l->token.type));
+#endif
+    l->unget = 1;
+    return &l->token;
 }
 
 token_t *lexer_next(lexer_t *l) {
-    memcpy(&l->prev, &l->token, sizeof(token_t));
+    if(l->unget) {
+        l->unget = 0;
+        return &l->token;
+    }
     for(; l->start < l->end; l->start++) {
         unsigned char c = *l->start;
         if(('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == '_')
@@ -42,7 +50,11 @@ token_t *lexer_next(lexer_t *l) {
         switch(c) {
 
 /* HACK: really dumb macro to increment l->start */
+#ifdef LEXER_DEBUG
+#define T(t, sz) printf("\033[31mlexer_next\033[m: %s\n", token_type_str(t)), l->start += sz, token_init(&l->token, l->start - sz, sz, t)
+#else
 #define T(t, sz) l->start += sz, token_init(&l->token, l->start - sz, sz, t)
+#endif
         case ';': case '{': case '}': case '(': case ')': case ',': case '^':
         case '+': case '-': case '*': case '/': case '%': case '~':
             return T(c, 1);
@@ -83,15 +95,23 @@ token_t *lexer_next(lexer_t *l) {
 
 static const struct {
     unsigned char str[7];
+    size_t len;
     enum token_type type;
 } keywords[] = {
-{"let", TLET},
-{"if", TIF},
-{"else", TELSE},
-{"fn", TFN},
-{"return", TRETURN},
+#define T(str, tk) {(str), sizeof(str)-1, (tk)},
+T("let", TLET)
+T("if", TIF)
+T("else", TELSE)
+T("fn", TFN)
+T("return", TRETURN)
+#undef T
 };
 
+#ifdef LEXER_DEBUG
+#define T(tk, type) printf("\033[31mlexer_next\033[m: %s\n", token_type_str(type)), token_init(tk, orig, sz, type)
+#else
+#define T(tk, type) token_init(tk, orig, sz, type)
+#endif
 static token_t *lexer_read_identifier(lexer_t *l) {
     size_t sz = 1;
     const unsigned char *orig = l->start++;
@@ -103,10 +123,10 @@ static token_t *lexer_read_identifier(lexer_t *l) {
 
     /* check if identifier is actually a keyword */
     for(size_t i = 0; i < sizeof keywords / sizeof *keywords; i++)
-        if(!memcmp(keywords[i].str, orig, MIN(sz, sizeof keywords[i].str)))
-            return token_init(&l->token, orig, sz, keywords[i].type);
+        if(sz == keywords[i].len && !memcmp(keywords[i].str, orig, sz))
+            return T(&l->token, keywords[i].type);
 
-    return token_init(&l->token, orig, sz, TIDENTIFIER);
+    return T(&l->token, TIDENTIFIER);
 }
 
 static token_t *lexer_read_constant(lexer_t *l) {
@@ -115,5 +135,6 @@ static token_t *lexer_read_constant(lexer_t *l) {
     for(; l->start < l->end
        && ('0' <= *l->start && *l->start <= '9'); l->start++, sz++);
 
-    return token_init(&l->token, orig, sz, TCONSTANT);
+    return T(&l->token, TCONSTANT);
 }
+#undef T

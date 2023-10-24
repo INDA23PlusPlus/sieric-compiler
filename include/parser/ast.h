@@ -106,7 +106,7 @@ typedef struct ast_node_expr_call {
 typedef struct ast_node_stmt_decl {
     ast_node_t hdr;
 
-    struct ast_node_ident ident;
+    struct ast_node_ident *ident;
     /** ast_node_t of an expression type (or const/ident) */
     struct ast_node *expr;
 } ast_node_stmt_decl_t;
@@ -121,6 +121,7 @@ typedef struct ast_node_stmt_expr {
 typedef struct ast_node_stmt_if {
     ast_node_t hdr;
 
+    ast_node_t *condition;
     /** vector of ast_node_t of statement types */
     vec_t *branch_true, *branch_false;
 } ast_node_stmt_if_t;

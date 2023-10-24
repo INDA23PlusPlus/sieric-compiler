@@ -1,0 +1,8 @@
+fn iter(i, n) {
+    if i == n {
+        return 0;
+    } else {
+        print(fib(i));
+        return iter(i + 1, n);
+    }
+}
