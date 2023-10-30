@@ -1,5 +1,6 @@
 #include <parser/parser.h>
 #include <stdlib.h>
+#include <inttypes.h>
 #include <string.h>
 #include <errno.h>
 
@@ -53,6 +54,10 @@ ast_node_t *parser_parse(parser_t *p) {
 
     ast_node_fn_defn_t *fn;
     while((fn = parser_parse_fn_defn(p))) vec_push(tu->functions, fn);
+    if(p->error) {
+        ast_free((void *)tu);
+        return NULL;
+    }
 
     return (ast_node_t *)tu;
 }
@@ -91,8 +96,7 @@ static ast_node_fn_defn_t *parser_parse_fn_defn(parser_t *p) {
 
     ast_node_fn_defn_t *node = malloc(sizeof(ast_node_fn_defn_t));
     node->hdr.type = AST_FN_DEFN;
-    node->name_sz = token->sz;
-    node->name = strndup((char *)token->start, token->sz);
+    node->ident = ast_node_ident_new(token);
     node->arguments = vec_new_free(1, (vec_free_t)ast_free);
     node->body = vec_new_free(1, (vec_free_t)ast_free);
 
@@ -178,12 +182,30 @@ static ast_node_stmt_if_t *parser_parse_stmt_if(parser_t *p) {
         free(node);
         return NULL;
     }
-    node->branch_true = vec_new(1);
-    node->branch_false = vec_new(1);
+    node->branch_true = vec_new_free(1, (vec_free_t)ast_free);
+    node->branch_false = vec_new_free(1, (vec_free_t)ast_free);
 
     if(parser_parse_block(p, node->branch_true)) goto ret_free;
     if(lexer_next(p->lexer)->type != TELSE) lexer_unget(p->lexer);
-    else if(parser_parse_block(p, node->branch_false)) goto ret_free;
+    else switch(lexer_next(p->lexer)->type) {
+    case TIF: {
+        lexer_unget(p->lexer);
+
+        ast_node_stmt_if_t *else_if = parser_parse_stmt_if(p);
+        if(!else_if) goto ret_free;
+        vec_push(node->branch_false, else_if);
+        break;
+    }
+
+    case '{':
+        lexer_unget(p->lexer);
+
+        if(parser_parse_block(p, node->branch_false)) goto ret_free;
+        break;
+
+    default:
+        goto ret_free;
+    }
 
     return node;
 ret_free:
@@ -483,6 +505,9 @@ static ast_node_t *parser_parse_expr_postfix(parser_t *p) {
     }
 
     default:
+        fprintf(stderr, "[Error] Expected token 'TCONSTANT', 'TIDENTIFIER', or "
+                        "'TLPAREN' but got '%s'\n", token_type_str(t->type));
+        p->error = 1;
         return NULL;
 
     case TIDENTIFIER:
@@ -538,7 +563,7 @@ static ast_node_const_t *ast_node_const_new(token_t *token) {
         buf[token->sz] = '\0';
         errno = 0;
         node->value = strtoll(buf, NULL, 10);
-        if(errno) perror("strtoull");
+        if(errno) perror("strtoll");
     }
     return node;
 }
@@ -596,7 +621,8 @@ static void ast_print_internal(ast_node_t *root, size_t n) {
 
     case AST_FN_DEFN: {
         ast_node_fn_defn_t *node = (void *)root;
-        printf("%sFunction[%.*s(", pad, (int)node->name_sz, node->name);
+        printf("%sFunction[%.*s(",
+               pad, (int)node->ident->name_sz, node->ident->name);
         for(size_t i = 0; i < node->arguments->sz; ++i) {
             ast_node_ident_t *arg = vec_get(node->arguments, i);
             printf("%.*s,", (int)arg->name_sz, arg->name);
@@ -713,12 +739,12 @@ static void ast_print_internal(ast_node_t *root, size_t n) {
 
     case AST_CONST: {
         ast_node_const_t *node = (void *)root;
-        printf("%sConstant[%zd]\n", pad, node->value);
+        printf("%sConstant[%"PRId64"]\n", pad, node->value);
         break;
     }
 
     default:
-        printf("%sSomething unknown\n", pad);
+        printf("%sUnknownNode\n", pad);
         break;
     }
 }

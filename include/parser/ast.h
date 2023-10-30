@@ -58,9 +58,7 @@ typedef struct ast_node_tu {
 typedef struct ast_node_fn_defn {
     ast_node_t hdr;
 
-    char *name;
-    size_t name_sz;
-
+    struct ast_node_ident *ident;
     /** vector of ast_node_t of statement types */
     vec_t *body;
     /** vector of ast_node_ident_t */

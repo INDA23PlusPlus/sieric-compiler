@@ -1,0 +1,10 @@
+fn main() {
+    let x = input();
+    if x == 4 {
+        print(4);
+    } else if x == 3 {
+        print(3);
+    } else {
+        print(0-1);
+    }
+}
