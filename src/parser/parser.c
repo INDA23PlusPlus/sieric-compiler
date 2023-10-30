@@ -34,7 +34,6 @@ static ast_node_expr_binary_t *ast_node_expr_binary_new(
 static ast_node_expr_unary_t *ast_node_expr_unary_new(
     ast_node_t *, enum expr_unary_type);
 
-static void ast_free(ast_node_t *);
 static void pad_printf(size_t, const char *restrict, ...);
 static void ast_print_internal(ast_node_t *root, size_t n);
 
@@ -587,9 +586,84 @@ static ast_node_expr_unary_t *ast_node_expr_unary_new(
     return node;
 }
 
-/* TODO */
-static void ast_free(ast_node_t *node) {
-    printf("freeing node type %d at %p\n", node->type, node);
+void ast_free(ast_node_t *root) {
+    switch(root->type) {
+    case AST_TU: {
+        ast_node_tu_t *node = (void *)root;
+        vec_free(node->functions);
+        break;
+    }
+
+    case AST_FN_DEFN: {
+        ast_node_fn_defn_t *node = (void *)root;
+        vec_free(node->arguments);
+        vec_free(node->body);
+        ast_free((void *)node->ident);
+        break;
+    }
+
+    case AST_STMT_DECL: {
+        ast_node_stmt_decl_t *node = (void *)root;
+        ast_free(node->expr);
+        ast_free((void *)node->ident);
+        break;
+    }
+
+    case AST_STMT_EXPR: {
+        ast_node_stmt_expr_t *node = (void *)root;
+        ast_free(node->expr);
+        break;
+    }
+
+    case AST_STMT_IF: {
+        ast_node_stmt_if_t *node = (void *)root;
+        vec_free(node->branch_true);
+        vec_free(node->branch_false);
+        ast_free(node->condition);
+        break;
+    }
+
+    case AST_STMT_RET: {
+        ast_node_stmt_ret_t *node = (void *)root;
+        ast_free(node->expr);
+        break;
+    }
+
+    case AST_STMT_BLOCK: {
+        ast_node_stmt_block_t *node = (void *)root;
+        vec_free(node->stmts);
+        break;
+    }
+
+    case AST_EXPR_BINARY: {
+        ast_node_expr_binary_t *node = (void *)root;
+        ast_free(node->left);
+        ast_free(node->right);
+        break;
+    }
+
+    case AST_EXPR_UNARY: {
+        ast_node_expr_unary_t *node = (void *)root;
+        ast_free(node->op);
+        break;
+    }
+
+    case AST_EXPR_CALL: {
+        ast_node_expr_call_t *node = (void *)root;
+        vec_free(node->args);
+        ast_free((void *)node->ident);
+        break;
+    }
+
+    case AST_IDENT: {
+        ast_node_ident_t *node = (void *)root;
+        free(node->name);
+        break;
+    }
+
+    case AST_CONST: break;
+    }
+    free(root);
 }
 
 static void pad_printf(size_t n, const char *restrict fmt, ...) {
