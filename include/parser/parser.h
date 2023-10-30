@@ -16,7 +16,4 @@ void parser_free(parser_t *);
 
 int parser_eat(parser_t *, enum token_type);
 
-void ast_print(ast_node_t *);
-void ast_free(ast_node_t *);
-
 #endif /* PARSER_PARSER_H_ */

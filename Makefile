@@ -21,4 +21,6 @@ $(OUT): $(OBJ)
 	@echo "LD	$(shell basename $@)"
 	@$(CC) -o $@ $(CFLAGS) $^ $(LDFLAGS)
 
+-include $(SRC_MK)
+
 .PHONY: all clean

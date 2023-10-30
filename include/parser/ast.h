@@ -1,8 +1,11 @@
 #ifndef PARSER_AST_H_
 #define PARSER_AST_H_
 
+#include <parser/token.h>
 #include <utils/vector.h>
 #include <stdint.h>
+
+/****** types ******/
 
 enum ast_node_type {
 AST_TU,
@@ -138,5 +141,17 @@ typedef struct ast_node_stmt_block {
     /** vector of ast_node_t of statement types */
     vec_t *stmts;
 } ast_node_stmt_block_t;
+
+/****** functions ******/
+
+ast_node_ident_t *ast_node_ident_new(token_t *);
+ast_node_const_t *ast_node_const_new(token_t *);
+ast_node_expr_binary_t *ast_node_expr_binary_new(
+    ast_node_t *, ast_node_t *, enum expr_binary_type);
+ast_node_expr_unary_t *ast_node_expr_unary_new(
+    ast_node_t *, enum expr_unary_type);
+
+void ast_print(ast_node_t *);
+void ast_free(ast_node_t *);
 
 #endif /* PARSER_AST_H_ */
