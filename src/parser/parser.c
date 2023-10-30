@@ -476,7 +476,7 @@ static ast_node_t *parser_parse_expr_postfix(parser_t *p) {
     case TCONSTANT:
         return (void *)ast_node_const_new(t);
 
-    case ')': {
+    case '(': {
         ast_node_t *expr = parser_parse_expr(p);
         parser_eat(p, ')');
         return expr;
