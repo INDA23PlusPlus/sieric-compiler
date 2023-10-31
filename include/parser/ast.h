@@ -47,6 +47,9 @@ EXPR_LNOT,
 EXPR_BITNOT,
 };
 
+struct semantics_ctx;
+struct scope;
+
 typedef struct ast_node {
     enum ast_node_type type;
 } ast_node_t;
@@ -56,6 +59,8 @@ typedef struct ast_node_tu {
 
     /** vector of ast_node_fn_defn_t */
     vec_t *functions;
+
+    struct semantics_ctx *ctx;
 } ast_node_tu_t;
 
 typedef struct ast_node_fn_defn {
@@ -66,6 +71,8 @@ typedef struct ast_node_fn_defn {
     vec_t *body;
     /** vector of ast_node_ident_t */
     vec_t *arguments;
+
+    struct scope *scope;
 } ast_node_fn_defn_t;
 
 typedef struct ast_node_ident {
@@ -140,6 +147,8 @@ typedef struct ast_node_stmt_block {
 
     /** vector of ast_node_t of statement types */
     vec_t *stmts;
+
+    struct scope *scope;
 } ast_node_stmt_block_t;
 
 /****** functions ******/

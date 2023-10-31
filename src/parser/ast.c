@@ -1,4 +1,5 @@
 #include <parser/parser.h>
+#include <parser/semantics.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <inttypes.h>
@@ -54,6 +55,7 @@ void ast_free(ast_node_t *root) {
     case AST_TU: {
         ast_node_tu_t *node = (void *)root;
         vec_free(node->functions);
+        if(node->ctx) semantics_free(node->ctx);
         break;
     }
 
@@ -62,6 +64,8 @@ void ast_free(ast_node_t *root) {
         vec_free(node->arguments);
         vec_free(node->body);
         ast_free((void *)node->ident);
+        /* frees the scopes of all blocks as well */
+        if(node->scope) scope_free(node->scope);
         break;
     }
 
@@ -95,6 +99,7 @@ void ast_free(ast_node_t *root) {
     case AST_STMT_BLOCK: {
         ast_node_stmt_block_t *node = (void *)root;
         vec_free(node->stmts);
+        /* scope is freed when freeing the function definition */
         break;
     }
 
@@ -144,7 +149,7 @@ void ast_print(ast_node_t *root) {
 
 static void ast_print_internal(ast_node_t *root, size_t n) {
     char pad[2*n+1];
-    for(size_t i = 0; i < 2*n; ++i) pad[i] = ' ';
+    memset(pad, ' ', 2*n);
     pad[2*n] = '\0';
 
     switch(root->type) {

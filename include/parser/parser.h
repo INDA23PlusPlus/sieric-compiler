@@ -11,7 +11,7 @@ typedef struct parser {
 } parser_t;
 
 parser_t *parser_new(lexer_t *);
-ast_node_t *parser_parse(parser_t *);
+ast_node_tu_t *parser_parse(parser_t *);
 void parser_free(parser_t *);
 
 int parser_eat(parser_t *, enum token_type);

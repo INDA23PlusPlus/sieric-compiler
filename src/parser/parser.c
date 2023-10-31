@@ -32,7 +32,7 @@ parser_t *parser_new(lexer_t *lexer) {
     return parser;
 }
 
-ast_node_t *parser_parse(parser_t *p) {
+ast_node_tu_t *parser_parse(parser_t *p) {
     ast_node_tu_t *tu = malloc(sizeof(ast_node_tu_t));
     tu->hdr.type = AST_TU;
     tu->functions = vec_new_free(1, (vec_free_t)ast_free);
@@ -44,7 +44,7 @@ ast_node_t *parser_parse(parser_t *p) {
         return NULL;
     }
 
-    return (ast_node_t *)tu;
+    return tu;
 }
 
 void parser_free(parser_t *p) {
