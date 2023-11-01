@@ -16,11 +16,14 @@ const char *help_str = ""
 "Usage: "PROGRAM_NAME" [option]... infile\n"
 "\n"
 "  -h            print this help message\n"
-"  -o outfile    output assembly to outfile\n"
+"  -c            only transpile to assembly\n"
+"  -o outfile    output program to outfile\n"
+"  -a file       output assembly to file\n"
 ;
 
 struct options {
-    const char *infile, *outfile;
+    const char *infile, *outfile, *asmfile;
+    int compile;
 } options;
 
 int main(int argc, char *argv[]) {
@@ -28,13 +31,23 @@ int main(int argc, char *argv[]) {
 
     options = (struct options){
         .outfile = "./a.out",
+        .asmfile = NULL,
+        .compile = 1,
     };
 
     int c;
-    while((c = getopt(argc, argv, "ho:")) != -1) {
+    while((c = getopt(argc, argv, "hco:a:")) != -1) {
         switch(c) {
         case 'o':
             options.outfile = optarg;
+            break;
+
+        case 'c':
+            options.compile = 0;
+            break;
+
+        case 'a':
+            options.asmfile = optarg;
             break;
 
         default:
@@ -84,27 +97,37 @@ int main(int argc, char *argv[]) {
     else goto ret_free_parser;
 
     char asm_path[] = "/tmp/dpp_XXXXXX";
-    int fd;
-    if(!(fd = mkstemp(asm_path))) {
-        perror("tmpfile");
+    if(!options.asmfile) {
+        int fd;
+        if(!(fd = mkstemp(asm_path))) {
+            perror("tmpfile");
+            ret = EXIT_FAILURE;
+            goto ret_free_code;
+        }
+        if(!(f = fdopen(fd, "w"))) {
+            perror("fdopen");
+            ret = EXIT_FAILURE;
+            goto ret_free_code;
+        }
+        options.asmfile = asm_path;
+    } else if(!(f = fopen(options.asmfile, "w"))) {
+        perror("fopen");
         ret = EXIT_FAILURE;
         goto ret_free_code;
     }
-    if(!(f = fdopen(fd, "w"))) {
-        perror("fdopen");
-        ret = EXIT_FAILURE;
-        goto ret_free_code;
-    }
+
     if(asm_generate(f, code))
         fprintf(stderr, "[Error] Failed to generate assembly\n");
     fclose(f);
 
-    char cmd[512];
-    snprintf(cmd, sizeof cmd, "nasm -felf64 %s", asm_path);
-    system(cmd);
-    snprintf(cmd, sizeof cmd, "gcc -no-pie -o '%s' %s.o",
-             options.outfile, asm_path);
-    system(cmd);
+    if(options.compile) {
+        char cmd[512];
+        snprintf(cmd, sizeof cmd, "nasm -felf64 %s", options.asmfile);
+        system(cmd);
+        snprintf(cmd, sizeof cmd, "gcc -no-pie -o '%s' %s.o",
+                options.outfile, options.asmfile);
+        system(cmd);
+    }
 
 ret_free_code:
     code_free(code);
