@@ -283,9 +283,16 @@ static int semantics_analyze_expr(semantics_ctx_t *ctx, scope_t *scope,
 
     case AST_EXPR_CALL: {
         ast_node_expr_call_t *expr = (void *)root;
-        if(!function_ref_find(ctx, expr->ident)) {
+        function_ref_t *ref;
+        if(!(ref = function_ref_find(ctx, expr->ident))) {
             fprintf(stderr, "[Error] Undefined reference to function '%.*s'\n",
                     (int)expr->ident->name_sz, expr->ident->name);
+            ret = ctx->error = 1;
+            goto ret;
+        }
+        if(expr->args->sz != ref->num_args) {
+            fprintf(stderr, "[Error] Expected %zu arguments, got %zu\n",
+                    ref->num_args, expr->args->sz);
             ret = ctx->error = 1;
             goto ret;
         }
