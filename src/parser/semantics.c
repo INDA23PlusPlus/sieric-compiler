@@ -5,6 +5,9 @@
 static void scope_dump(scope_t *, size_t);
 
 static int semantics_analyze_fn(semantics_ctx_t *, ast_node_fn_defn_t *);
+static int semantics_analyze_block(semantics_ctx_t *, scope_t *, vec_t *);
+static int semantics_analyze_stmt(semantics_ctx_t *, scope_t *, ast_node_t *);
+static int semantics_analyze_expr(semantics_ctx_t *, scope_t *, ast_node_t *);
 
 function_ref_t *function_ref_new(char *name, size_t name_sz, size_t num_args) {
     function_ref_t *ref = malloc(sizeof(function_ref_t));
@@ -87,11 +90,12 @@ static void scope_dump(scope_t *scope, size_t n) {
         printf("%s%.*s at [rbp%c%#zx]\n",
                pad, (int)ref->name_sz, ref->name, sign, abs_off);
     }
-    printf("%sSub-scopes:\n", pad);
+    printf("%sSubscopes: {\n", pad);
     for(size_t i = 0; i < scope->children->sz; ++i) {
         scope_dump(vec_get(scope->children, i), n+1);
-        puts("----------------------------");
+        printf("%s,\n", pad);
     }
+    printf("%s}\n", pad);
 }
 
 semantics_ctx_t *semantics_new(void) {
@@ -136,6 +140,84 @@ static int semantics_analyze_fn(semantics_ctx_t *ctx, ast_node_fn_defn_t *fn) {
                                       i, fn->arguments->sz)
         );
 
+    return semantics_analyze_block(ctx, scope, fn->body);
+}
+
+static int semantics_analyze_block(semantics_ctx_t *ctx, scope_t *scope,
+                                   vec_t *body) {
+    int ret = 0;
+    for(size_t i = 0; i < body->sz; ++i)
+        if((ret = semantics_analyze_stmt(ctx, scope, vec_get(body, i))))
+            break;
+    return ret;
+}
+
+static int semantics_analyze_stmt(semantics_ctx_t *ctx, scope_t *scope,
+                                  ast_node_t *root) {
+    int ret = 0;
+    switch(root->type) {
+    case AST_STMT_DECL: {
+        ast_node_stmt_decl_t *stmt = (void *)root;
+        /* analyze expression before adding the new variable */
+        if((ret = semantics_analyze_expr(ctx, scope, stmt->expr)))
+            goto ret;
+        variable_ref_new_scope(scope, stmt->ident);
+        break;
+    }
+
+    case AST_STMT_EXPR: {
+        ast_node_stmt_expr_t *stmt = (void *)root;
+        if((ret = semantics_analyze_expr(ctx, scope, stmt->expr)))
+            goto ret;
+        break;
+    }
+
+    case AST_STMT_IF: {
+        ast_node_stmt_if_t *stmt = (void *)root;
+        if((ret = semantics_analyze_expr(ctx, scope, stmt->condition)))
+            goto ret;
+        stmt->scope_true = scope_new(ctx, scope);
+        if((ret = semantics_analyze_block(ctx, stmt->scope_true,
+                                          stmt->branch_true)))
+            goto ret;
+
+        if(stmt->branch_false->sz) {
+            stmt->scope_false = scope_new(ctx, scope);
+            if((ret = semantics_analyze_block(ctx, stmt->scope_false,
+                                              stmt->branch_false)))
+                goto ret;
+        }
+
+        break;
+    }
+
+    case AST_STMT_RET: {
+        ast_node_stmt_ret_t *stmt = (void *)root;
+        if((ret = semantics_analyze_expr(ctx, scope, stmt->expr)))
+            goto ret;
+        break;
+    }
+
+    case AST_STMT_BLOCK: {
+        ast_node_stmt_block_t *stmt = (void *)root;
+        stmt->scope = scope_new(ctx, scope);
+        if((ret = semantics_analyze_block(ctx, stmt->scope, stmt->stmts)))
+            goto ret;
+        break;
+    }
+
+    default:
+        fprintf(stderr, "[Error] Non-statement node in a statement list!\n");
+        ret = ctx->error = 1;
+        goto ret;
+    }
+
+ret:
+    return ret;
+}
+
+static int semantics_analyze_expr(semantics_ctx_t *ctx, scope_t *scope,
+                                  ast_node_t *root) {
     return 0;
 }
 

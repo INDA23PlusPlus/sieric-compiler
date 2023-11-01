@@ -1,6 +1,9 @@
 #ifndef PARSER_AST_H_
 #define PARSER_AST_H_
 
+/* TODO: change all vectors of statements to block statement nodes to make
+ * semantic analysis more clean */
+
 #include <parser/token.h>
 #include <utils/vector.h>
 #include <stdint.h>
@@ -133,6 +136,7 @@ typedef struct ast_node_stmt_if {
     ast_node_t *condition;
     /** vector of ast_node_t of statement types */
     vec_t *branch_true, *branch_false;
+    struct scope *scope_true, *scope_false;
 } ast_node_stmt_if_t;
 
 typedef struct ast_node_stmt_ret {
