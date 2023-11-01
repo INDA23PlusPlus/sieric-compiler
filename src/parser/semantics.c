@@ -163,9 +163,11 @@ int semantics_analyze(semantics_ctx_t *ctx, ast_node_tu_t *tu) {
 
     /* pre-add all functions to the global scope so all functions can see
      * eachother */
-    for(size_t i = 0; i < tu->functions->sz; ++i)
-        vec_push(ctx->functions,
-                 function_ref_new_node(vec_get(tu->functions, i)));
+    for(size_t i = 0; i < tu->functions->sz; ++i) {
+        ast_node_fn_defn_t *fn = vec_get(tu->functions, i);
+        fn->ref = function_ref_new_node(fn);
+        vec_push(ctx->functions, fn->ref);
+    }
 
     for(size_t i = 0; i < tu->functions->sz; ++i)
         if((ret = semantics_analyze_fn(ctx, vec_get(tu->functions, i))))
@@ -335,7 +337,7 @@ void semantics_dump_tables(ast_node_tu_t *tu) {
         printf("%.*s[%zu]\n", (int)ref->name_sz, ref->name, ref->num_args);
     }
 
-    puts("Scopes:");
+    puts("\nScopes:");
     for(size_t i = 0; i < tu->functions->sz; ++i) {
         ast_node_fn_defn_t *fn = vec_get(tu->functions, i);
         printf("%.*s:\n", (int)fn->ident->name_sz, fn->ident->name);

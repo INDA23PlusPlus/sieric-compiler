@@ -52,6 +52,7 @@ EXPR_BITNOT,
 
 struct semantics_ctx;
 struct scope;
+struct function_ref;
 
 typedef struct ast_node {
     enum ast_node_type type;
@@ -76,6 +77,7 @@ typedef struct ast_node_fn_defn {
     vec_t *arguments;
 
     struct scope *scope;
+    struct function_ref *ref;
 } ast_node_fn_defn_t;
 
 typedef struct ast_node_ident {

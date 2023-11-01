@@ -6,6 +6,7 @@
 #include <parser/lexer.h>
 #include <parser/parser.h>
 #include <parser/semantics.h>
+#include <parser/code.h>
 
 #define PROGRAM_NAME "compiler"
 
@@ -68,13 +69,19 @@ int main(int argc, char *argv[]) {
     lexer_t *lexer = lexer_new(buf, sz - 1);
     parser_t *parser = parser_new(lexer);
     ast_node_tu_t *root = parser_parse(parser);
+    ir_code_t *code;
     if(!parser->error) ast_print((void *)root);
     else goto ret_free_parser;
 
     semantics_analyze(semantics_new(), (void *)root);
-    if(!root->ctx->error) semantics_dump_tables((void *)root);
+    if(!root->ctx->error) putchar('\n'), semantics_dump_tables((void *)root);
     else goto ret_free_parser;
 
+    code = code_new(root);
+    if(code) puts("\nCode:"), code_dump(code);
+    else goto ret_free_parser;
+
+    code_free(code);
 ret_free_parser:
     lexer_free(lexer);
     parser_free(parser);
