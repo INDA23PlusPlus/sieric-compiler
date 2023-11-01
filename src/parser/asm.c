@@ -46,7 +46,6 @@ static const char asm_post[] = ""
 ;
 
 static inline const char *data_str(ir_instr_data_t *data) {
-    printf("handle data_str from %p\n", data);
     static char buf[128];
     if(data->variable) snprintf(buf, sizeof buf, "qword [rbp%c%#zx]",
                        data->ref->bp_offset < 0 ? '-' : '+',
