@@ -8,6 +8,8 @@
 #include <parser/semantics.h>
 #include <parser/code.h>
 
+#define MAX(a, b) ((a)>(b)?(a):(b))
+
 #define PROGRAM_NAME "compiler"
 
 const char *help_str = ""
@@ -25,7 +27,7 @@ int main(int argc, char *argv[]) {
     int ret = EXIT_SUCCESS;
 
     options = (struct options){
-        .outfile = "./out.asm",
+        .outfile = "./a.out",
     };
 
     int c;
@@ -81,14 +83,28 @@ int main(int argc, char *argv[]) {
     if(code) puts("\nCode:"), code_dump(code);
     else goto ret_free_parser;
 
-    if(!(f = fopen(options.outfile, "w"))) {
-        perror("fopen");
+    char asm_path[] = "/tmp/dpp_XXXXXX";
+    int fd;
+    if(!(fd = mkstemp(asm_path))) {
+        perror("tmpfile");
+        ret = EXIT_FAILURE;
+        goto ret_free_code;
+    }
+    if(!(f = fdopen(fd, "w"))) {
+        perror("fdopen");
         ret = EXIT_FAILURE;
         goto ret_free_code;
     }
     if(asm_generate(f, code))
         fprintf(stderr, "[Error] Failed to generate assembly\n");
     fclose(f);
+
+    char cmd[512];
+    snprintf(cmd, sizeof cmd, "nasm -felf64 %s", asm_path);
+    system(cmd);
+    snprintf(cmd, sizeof cmd, "gcc -no-pie -o '%s' %s.o",
+             options.outfile, asm_path);
+    system(cmd);
 
 ret_free_code:
     code_free(code);
