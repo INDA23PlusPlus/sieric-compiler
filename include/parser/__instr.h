@@ -8,6 +8,10 @@ T(POP,            0x02)
 /** ir_instr_data_t (only variable) */
 T(ASSIGN,         0x03)
 T(SAVE,           0x04)
+/** ir_instr_data_t (only immediate) */
+T(SCOPEBEGIN,     0x05)
+/** ir_instr_data_t (only immediate) */
+T(SCOPEEND,       0x06)
 
 /* binary op */
 T(ADD,            0x10)

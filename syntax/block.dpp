@@ -1,5 +1,5 @@
 fn goo(a) {
-  print(a);
+    print(a);
 }
 
 fn main() {
@@ -10,6 +10,10 @@ fn main() {
         print(m);
     } else {
         print(n);
+    }
+
+    if n == 3 {
+    } else {
     }
 
     {

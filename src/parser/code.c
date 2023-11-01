@@ -41,10 +41,10 @@ ir_instr_label_t *instr_new_label(enum ir_instr_type type, size_t id) {
     return instr;
 }
 
-ir_instr_if_t *instr_new_if(ir_code_t *code) {
+ir_instr_if_t *instr_new_if(ir_code_t *code, ast_node_stmt_if_t *stmt) {
     ir_instr_if_t *instr = malloc(sizeof(ir_instr_if_t));
     instr->hdr.type = IR_IF;
-    instr->false_label = code->num_label++;
+    instr->false_label = stmt->branch_false->sz ? code->num_label++ : 0;
     instr->end_label = code->num_label++;
     return instr;
 }
@@ -120,9 +120,21 @@ ret:
 
 static int code_generate_block(ir_code_t *code, scope_t *scope, vec_t *body) {
     int ret = 0;
+    vec_t *ins = code->instructions;
+
+    size_t parent_vars = scope->parent ? scope->parent->variable_count : 0;
+    size_t scope_vars = 0;
+    if(scope->variable_count > parent_vars) {
+        scope_vars = scope->variable_count - parent_vars;
+        vec_push(ins, instr_new_imm(IR_SCOPEBEGIN, scope_vars));
+    }
+
     for(size_t i = 0; i < body->sz; ++i)
         if((ret = code_generate_stmt(code, scope, vec_get(body, i))))
             break;
+
+    if(scope_vars) vec_push(ins, instr_new_imm(IR_SCOPEEND, scope_vars));
+
     return ret;
 }
 
@@ -148,18 +160,27 @@ static int code_generate_stmt(ir_code_t *code, scope_t *scope, ast_node_t *root)
 
     case AST_STMT_IF: {
         ast_node_stmt_if_t *stmt = (void *)root;
-        if((ret = code_generate_expr(code, scope, stmt->condition, 1)))
+
+        /* discard if statements without bodies, but still calculate the
+         * condition (in case it has side-effects) */
+        int save = stmt->branch_true->sz || stmt->branch_false->sz;
+        if((ret = code_generate_expr(code, scope, stmt->condition, save)))
             goto ret;
-        ir_instr_if_t *iif = instr_new_if(code);
+        if(!save) goto ret;
+        /* TODO: optimize if x {} else { ... } to if !x { ... } */
+
+        ir_instr_if_t *iif = instr_new_if(code, stmt);
         vec_push(ins, iif);
         if((ret = code_generate_block(code, stmt->scope_true,
                                       stmt->branch_true)))
             goto ret;
-        vec_push(ins, instr_new_label(IR_JMP, iif->end_label));
-        vec_push(ins, instr_new_label(IR_LABEL, iif->false_label));
-        if((ret = code_generate_block(code, stmt->scope_false,
-                                      stmt->branch_false)))
-            goto ret;
+        if(stmt->branch_false->sz) {
+            vec_push(ins, instr_new_label(IR_JMP, iif->end_label));
+            vec_push(ins, instr_new_label(IR_LABEL, iif->false_label));
+            if((ret = code_generate_block(code, stmt->scope_false,
+                                        stmt->branch_false)))
+                goto ret;
+        }
         vec_push(ins, instr_new_label(IR_LABEL, iif->end_label));
         break;
     }
@@ -286,6 +307,12 @@ void code_dump(ir_code_t *code) {
             } if(0) {
         case IR_ASSIGN:
             printf("ASSIGN ");
+            } if(0) {
+        case IR_SCOPEBEGIN:
+            printf("SCOPEBEGIN ");
+            } if(0) {
+        case IR_SCOPEEND:
+            printf("SCOPEEND ");
             }
             {
                 ir_instr_data_t *data = (void *)in;

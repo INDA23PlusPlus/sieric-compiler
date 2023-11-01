@@ -47,7 +47,7 @@ typedef struct ir_code {
 
 ir_instr_t *instr_new(enum ir_instr_type);
 ir_instr_label_t *instr_new_label(enum ir_instr_type, size_t);
-ir_instr_if_t *instr_new_if(ir_code_t *);
+ir_instr_if_t *instr_new_if(ir_code_t *, ast_node_stmt_if_t *);
 ir_instr_data_t *instr_new_var(enum ir_instr_type, variable_ref_t *);
 ir_instr_data_t *instr_new_imm(enum ir_instr_type, int64_t);
 ir_instr_func_t *instr_new_func(enum ir_instr_type, function_ref_t *);
