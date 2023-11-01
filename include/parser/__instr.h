@@ -7,6 +7,7 @@ T(PUSH,           0x01)
 T(POP,            0x02)
 /** ir_instr_data_t (only variable) */
 T(ASSIGN,         0x03)
+T(SAVE,           0x04)
 
 /* binary op */
 T(ADD,            0x10)
@@ -45,3 +46,5 @@ T(IF,             0x60)
 /** ir_instr_label_t */
 T(LABEL,          0x61)
 T(RET,            0x62)
+/** ir_instr_label_t */
+T(JMP,            0x63)

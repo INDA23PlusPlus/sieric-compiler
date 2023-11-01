@@ -1,7 +1,16 @@
 #include <parser/code.h>
 #include <stdlib.h>
 
-static int code_generate_fn(vec_t *, ast_node_fn_defn_t *);
+static inline ir_instr_data_t *instr_new_var_find(enum ir_instr_type, scope_t *,
+                                                  ast_node_ident_t *);
+static inline ir_instr_func_t *instr_new_func_find(enum ir_instr_type,
+                                                   ir_code_t *,
+                                                   ast_node_ident_t *);
+
+static int code_generate_fn(ir_code_t *, ast_node_fn_defn_t *);
+static int code_generate_block(ir_code_t *, scope_t *, vec_t *);
+static int code_generate_stmt(ir_code_t *, scope_t *, ast_node_t *);
+static int code_generate_expr(ir_code_t *, scope_t *, ast_node_t *, int);
 
 static const struct instrtypestr {
 #define T(t, v) char str##t[sizeof(#t)];
@@ -25,9 +34,9 @@ ir_instr_t *instr_new(enum ir_instr_type type) {
     return instr;
 }
 
-ir_instr_label_t *instr_new_label(size_t id) {
+ir_instr_label_t *instr_new_label(enum ir_instr_type type, size_t id) {
     ir_instr_label_t *instr = malloc(sizeof(ir_instr_label_t));
-    instr->hdr.type = IR_LABEL;
+    instr->hdr.type = type;
     instr->id = id;
     return instr;
 }
@@ -46,6 +55,18 @@ ir_instr_data_t *instr_new_var(enum ir_instr_type type, variable_ref_t *ref) {
     instr->variable = 1;
     instr->ref = ref;
     return instr;
+}
+
+static inline ir_instr_data_t *instr_new_var_find(enum ir_instr_type type,
+                                                  scope_t *scope,
+                                                  ast_node_ident_t *ident) {
+    return instr_new_var(type, variable_ref_find(scope, ident));
+}
+
+static inline ir_instr_func_t *instr_new_func_find(enum ir_instr_type type,
+                                                   ir_code_t *code,
+                                                   ast_node_ident_t *ident) {
+    return instr_new_func(type, function_ref_find(code->ctx, ident));
 }
 
 ir_instr_data_t *instr_new_imm(enum ir_instr_type type, int64_t imm) {
@@ -70,11 +91,12 @@ const char *instr_type_str(enum ir_instr_type type) {
 
 ir_code_t *code_new(ast_node_tu_t *tu) {
     ir_code_t *code = malloc(sizeof(ir_code_t));
+    code->ctx = tu->ctx;
     code->num_label = 0;
     code->instructions = vec_new_free(1, free);
 
     for(size_t i = 0; i < tu->functions->sz; ++i)
-        if(code_generate_fn(code->instructions, vec_get(tu->functions, i)))
+        if(code_generate_fn(code, vec_get(tu->functions, i)))
             return code_free(code), NULL;
 
     return code;
@@ -85,12 +107,171 @@ void code_free(ir_code_t *code) {
     free(code);
 }
 
-static int code_generate_fn(vec_t *ins, ast_node_fn_defn_t *fn) {
+static int code_generate_fn(ir_code_t *code, ast_node_fn_defn_t *fn) {
+    int ret = 0;
+    vec_t *ins = code->instructions;
     vec_push(ins, instr_new_func(IR_FUNC, fn->ref));
-    vec_push(ins, instr_new_imm(IR_PUSH, 0));
-    vec_push(ins, instr_new(IR_RET));
+    if((ret = code_generate_block(code, fn->scope, fn->body)))
+        goto ret;
     vec_push(ins, instr_new(IR_LEAVE));
-    return 0;
+ret:
+    return ret;
+}
+
+static int code_generate_block(ir_code_t *code, scope_t *scope, vec_t *body) {
+    int ret = 0;
+    for(size_t i = 0; i < body->sz; ++i)
+        if((ret = code_generate_stmt(code, scope, vec_get(body, i))))
+            break;
+    return ret;
+}
+
+static int code_generate_stmt(ir_code_t *code, scope_t *scope, ast_node_t *root) {
+    int ret = 0;
+    vec_t *ins = code->instructions;
+
+    switch(root->type) {
+    case AST_STMT_DECL: {
+        ast_node_stmt_decl_t *stmt = (void *)root;
+        if((ret = code_generate_expr(code, scope, stmt->expr, 1)))
+            goto ret;
+        vec_push(ins, instr_new_var_find(IR_ASSIGN, scope, stmt->ident));
+        break;
+    }
+
+    case AST_STMT_EXPR: {
+        ast_node_stmt_expr_t *stmt = (void *)root;
+        if((ret = code_generate_expr(code, scope, stmt->expr, 0)))
+            goto ret;
+        break;
+    }
+
+    case AST_STMT_IF: {
+        ast_node_stmt_if_t *stmt = (void *)root;
+        if((ret = code_generate_expr(code, scope, stmt->condition, 1)))
+            goto ret;
+        ir_instr_if_t *iif = instr_new_if(code);
+        vec_push(ins, iif);
+        if((ret = code_generate_block(code, stmt->scope_true,
+                                      stmt->branch_true)))
+            goto ret;
+        vec_push(ins, instr_new_label(IR_JMP, iif->end_label));
+        vec_push(ins, instr_new_label(IR_LABEL, iif->false_label));
+        if((ret = code_generate_block(code, stmt->scope_false,
+                                      stmt->branch_false)))
+            goto ret;
+        vec_push(ins, instr_new_label(IR_LABEL, iif->end_label));
+        break;
+    }
+
+    case AST_STMT_RET: {
+        ast_node_stmt_ret_t *stmt = (void *)root;
+        if((ret = code_generate_expr(code, scope, stmt->expr, 1)))
+            goto ret;
+        vec_push(ins, instr_new(IR_RET));
+        break;
+    }
+
+    case AST_STMT_BLOCK: {
+        ast_node_stmt_block_t *stmt = (void *)root;
+        if((ret = code_generate_block(code, stmt->scope, stmt->stmts)))
+            goto ret;
+        break;
+    }
+
+    default:
+        fprintf(stderr, "[Error] Non-statement node type '%d' in a statement"
+                "list!\n", root->type);
+        ret = 1;
+        goto ret;
+    }
+
+ret:
+    return ret;
+}
+
+static int code_generate_expr(ir_code_t *code, scope_t *scope, ast_node_t *root,
+                              int save) {
+    int ret = 0;
+    vec_t *ins = code->instructions;
+
+    switch(root->type) {
+    case AST_EXPR_BINARY: {
+        ast_node_expr_binary_t *expr = (void *)root;
+
+        static const enum ir_instr_type binops[] = {
+        [EXPR_LOR] = IR_LOR,
+        [EXPR_LAND] = IR_LAND,
+        [EXPR_BITOR] = IR_BITOR,
+        [EXPR_BITXOR] = IR_BITXOR,
+        [EXPR_BITAND] = IR_BITAND,
+        [EXPR_EQ] = IR_EQ,
+        [EXPR_NEQ] = IR_NEQ,
+        [EXPR_LT] = IR_LT,
+        [EXPR_GT] = IR_GT,
+        [EXPR_LEQ] = IR_LEQ,
+        [EXPR_GEQ] = IR_GEQ,
+        [EXPR_ADD] = IR_ADD,
+        [EXPR_SUB] = IR_SUB,
+        [EXPR_MULT] = IR_MUL,
+        [EXPR_DIV] = IR_DIV,
+        [EXPR_MOD] = IR_MOD,
+        };
+
+        if((ret = code_generate_expr(code, scope, expr->left, 1)))
+            goto ret;
+        if((ret = code_generate_expr(code, scope, expr->right, 1)))
+            goto ret;
+        vec_push(ins, instr_new(binops[expr->type]));
+        break;
+    }
+
+    case AST_EXPR_UNARY: {
+        ast_node_expr_unary_t *expr = (void *)root;
+
+        static const enum ir_instr_type unops[] = {
+        [EXPR_LNOT] = IR_LNOT,
+        [EXPR_BITNOT] = IR_BITNOT,
+        };
+
+        if((ret = code_generate_expr(code, scope, expr->op, 1)))
+            goto ret;
+        vec_push(ins, instr_new(unops[expr->type]));
+        break;
+    }
+
+    case AST_EXPR_CALL: {
+        ast_node_expr_call_t *expr = (void *)root;
+        for(size_t i = 0; i < expr->args->sz; ++i)
+            if((ret = code_generate_expr(code, scope,
+                                         vec_get(expr->args, i), 1)))
+                goto ret;
+        vec_push(ins, instr_new_func_find(IR_CALL, code, expr->ident));
+        break;
+    }
+
+    case AST_CONST: {
+        ast_node_const_t *c = (void *)root;
+        if(save) vec_push(ins, instr_new_imm(IR_PUSH, c->value));
+        goto ret;
+    }
+
+    case AST_IDENT: {
+        ast_node_ident_t *ident = (void *)root;
+        if(save) vec_push(ins, instr_new_var_find(IR_PUSH, scope, ident));
+        goto ret;
+    }
+
+    default:
+        fprintf(stderr, "[Error] Invalid node type '%d' found in an"
+                "expression!\n", root->type);
+        ret = 1;
+        goto ret;
+    }
+
+    if(save) vec_push(ins, instr_new(IR_SAVE));
+ret:
+    return ret;
 }
 
 void code_dump(ir_code_t *code) {
@@ -118,14 +299,18 @@ void code_dump(ir_code_t *code) {
             }
             break;
 
-        case IR_CALL: case IR_FUNC: {
-            ir_instr_func_t *func = (void *)in;
-            printf(in->type == IR_CALL ? "CALL %.*s[%zu]\n"
-                                       : "FUNC %.*s[%zu]\n",
-                   (int)func->ref->name_sz, func->ref->name,
-                   func->ref->num_args);
-            break;
-        }
+        case IR_CALL:
+            printf("CALL ");
+            if(0) {
+        case IR_FUNC:
+            printf("FUNC ");
+            }
+            {
+                ir_instr_func_t *func = (void *)in;
+                printf("%.*s[%zu]\n", (int)func->ref->name_sz, func->ref->name,
+                    func->ref->num_args);
+                break;
+            }
 
         case IR_IF: {
             ir_instr_if_t *iif = (void *)in;
@@ -134,11 +319,17 @@ void code_dump(ir_code_t *code) {
             break;
         }
 
-        case IR_LABEL: {
-            ir_instr_label_t *label = (void *)in;
-            printf("LABEL %zu\n", label->id);
-            break;
-        }
+        case IR_LABEL:
+            printf("LABEL ");
+            if(0) {
+        case IR_JMP:
+            printf("JMP ");
+            }
+            {
+                ir_instr_label_t *label = (void *)in;
+                printf("%zu\n", label->id);
+                break;
+            }
 
         default:
             printf("%s\n", instr_type_str(in->type));
