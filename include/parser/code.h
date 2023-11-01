@@ -58,4 +58,6 @@ ir_code_t *code_new(ast_node_tu_t *);
 void code_free(ir_code_t *);
 void code_dump(ir_code_t *);
 
+int asm_generate(FILE *, ir_code_t *);
+
 #endif /* PARSER_CODE_H_ */

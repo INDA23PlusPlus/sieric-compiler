@@ -14,7 +14,7 @@ const char *help_str = ""
 "Usage: "PROGRAM_NAME" [option]... infile\n"
 "\n"
 "  -h            print this help message\n"
-"  -o outfile    output program to outfile\n"
+"  -o outfile    output assembly to outfile\n"
 ;
 
 struct options {
@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
     int ret = EXIT_SUCCESS;
 
     options = (struct options){
-        .outfile = "./a.out",
+        .outfile = "./out.asm",
     };
 
     int c;
@@ -81,6 +81,16 @@ int main(int argc, char *argv[]) {
     if(code) puts("\nCode:"), code_dump(code);
     else goto ret_free_parser;
 
+    if(!(f = fopen(options.outfile, "w"))) {
+        perror("fopen");
+        ret = EXIT_FAILURE;
+        goto ret_free_code;
+    }
+    if(asm_generate(f, code))
+        fprintf(stderr, "[Error] Failed to generate assembly\n");
+    fclose(f);
+
+ret_free_code:
     code_free(code);
 ret_free_parser:
     lexer_free(lexer);
