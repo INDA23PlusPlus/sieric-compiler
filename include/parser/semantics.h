@@ -38,11 +38,13 @@ typedef struct scope {
 function_ref_t *function_ref_new(char *, size_t, size_t);
 function_ref_t *function_ref_new_node(ast_node_fn_defn_t *);
 void function_ref_free(function_ref_t *);
+function_ref_t *function_ref_find(semantics_ctx_t *, ast_node_ident_t *);
 
 variable_ref_t *variable_ref_new(char *, size_t, ssize_t);
 variable_ref_t *variable_ref_new_scope(scope_t *, ast_node_ident_t *);
 variable_ref_t *variable_ref_new_arg(ast_node_ident_t *, size_t, size_t);
 void variable_ref_free(variable_ref_t *);
+variable_ref_t *variable_ref_find(scope_t *, ast_node_ident_t *);
 
 scope_t *scope_new(semantics_ctx_t *, scope_t *);
 void scope_free(scope_t *);

@@ -4,6 +4,9 @@
 
 static void scope_dump(scope_t *, size_t);
 
+static int function_ref_compar(vec_item_t, vec_item_t);
+static int variable_ref_compar(vec_item_t, vec_item_t);
+
 static int semantics_analyze_fn(semantics_ctx_t *, ast_node_fn_defn_t *);
 static int semantics_analyze_block(semantics_ctx_t *, scope_t *, vec_t *);
 static int semantics_analyze_stmt(semantics_ctx_t *, scope_t *, ast_node_t *);
@@ -25,6 +28,24 @@ function_ref_t *function_ref_new_node(ast_node_fn_defn_t *fn) {
 void function_ref_free(function_ref_t *ref) {
     free(ref->name);
     free(ref);
+}
+
+static int function_ref_compar(vec_item_t lv, vec_item_t rv) {
+    function_ref_t *l = lv, *r = rv;
+    if(l->name_sz != r->name_sz) return l->name_sz - r->name_sz;
+    else return memcmp(l->name, r->name, l->name_sz);
+}
+
+function_ref_t *function_ref_find(semantics_ctx_t *ctx,
+                                  ast_node_ident_t *ident) {
+    function_ref_t match = (function_ref_t) {
+    .name = ident->name,
+    .name_sz = ident->name_sz,
+    .num_args = 0,
+    };
+    ssize_t idx = vec_index_of(ctx->functions, &match, function_ref_compar);
+    if(idx < 0) return NULL;
+    else return vec_get(ctx->functions, idx);
 }
 
 variable_ref_t *variable_ref_new(char *name, size_t name_sz,
@@ -53,6 +74,29 @@ variable_ref_t *variable_ref_new_arg(ast_node_ident_t *ident,
 void variable_ref_free(variable_ref_t *ref) {
     free(ref->name);
     free(ref);
+}
+
+static int variable_ref_compar(vec_item_t lv, vec_item_t rv) {
+    variable_ref_t *l = lv, *r = rv;
+    if(l->name_sz != r->name_sz) return l->name_sz - r->name_sz;
+    else return memcmp(l->name, r->name, l->name_sz);
+}
+
+variable_ref_t *variable_ref_find(scope_t *scope, ast_node_ident_t *ident) {
+    variable_ref_t match = (variable_ref_t) {
+    .name = ident->name,
+    .name_sz = ident->name_sz,
+    .bp_offset = 0,
+    };
+    ssize_t idx;
+retry:
+    idx = vec_index_of(scope->variables, &match, variable_ref_compar);
+    if(idx < 0) {
+        if(scope->parent) {
+            scope = scope->parent;
+            goto retry;
+        } else return NULL;
+    } else return vec_get(scope->variables, idx);
 }
 
 scope_t *scope_new(semantics_ctx_t *ctx, scope_t *parent) {
@@ -207,7 +251,8 @@ static int semantics_analyze_stmt(semantics_ctx_t *ctx, scope_t *scope,
     }
 
     default:
-        fprintf(stderr, "[Error] Non-statement node in a statement list!\n");
+        fprintf(stderr, "[Error] Non-statement node type '%d' in a statement"
+                "list!\n", root->type);
         ret = ctx->error = 1;
         goto ret;
     }
@@ -218,7 +263,60 @@ ret:
 
 static int semantics_analyze_expr(semantics_ctx_t *ctx, scope_t *scope,
                                   ast_node_t *root) {
-    return 0;
+    int ret = 0;
+    switch(root->type) {
+    case AST_EXPR_BINARY: {
+        ast_node_expr_binary_t *expr = (void *)root;
+        if((ret = semantics_analyze_expr(ctx, scope, expr->left)))
+            goto ret;
+        if((ret = semantics_analyze_expr(ctx, scope, expr->right)))
+            goto ret;
+        break;
+    }
+
+    case AST_EXPR_UNARY: {
+        ast_node_expr_unary_t *expr = (void *)root;
+        if((ret = semantics_analyze_expr(ctx, scope, expr->op)))
+            goto ret;
+        break;
+    }
+
+    case AST_EXPR_CALL: {
+        ast_node_expr_call_t *expr = (void *)root;
+        if(!function_ref_find(ctx, expr->ident)) {
+            fprintf(stderr, "[Error] Undefined reference to function '%.*s'\n",
+                    (int)expr->ident->name_sz, expr->ident->name);
+            ret = ctx->error = 1;
+            goto ret;
+        }
+        for(size_t i = 0; i < expr->args->sz; ++i)
+            if((ret = semantics_analyze_expr(ctx, scope,
+                                             vec_get(expr->args, i))))
+                goto ret;
+        break;
+    }
+
+    case AST_IDENT: {
+        ast_node_ident_t *ident = (void *)root;
+        if(!variable_ref_find(scope, ident)) {
+            fprintf(stderr, "[Error] Undefined reference to variable '%.*s'\n",
+                    (int)ident->name_sz, ident->name);
+            ret = ctx->error = 1;
+            goto ret;
+        }
+    }
+
+    case AST_CONST: break;
+
+    default:
+        fprintf(stderr, "[Error] Invalid node type '%d' found in an"
+                "expression!\n", root->type);
+        ret = ctx->error = 1;
+        goto ret;
+    }
+
+ret:
+    return ret;
 }
 
 void semantics_dump_tables(ast_node_tu_t *tu) {
