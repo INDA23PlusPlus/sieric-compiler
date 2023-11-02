@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <parser/token.h>
@@ -22,7 +23,7 @@ const char *help_str = ""
 ;
 
 struct options {
-    const char *infile, *outfile, *asmfile;
+    char *infile, *outfile, *asmfile;
     int compile;
 } options;
 
@@ -121,9 +122,17 @@ int main(int argc, char *argv[]) {
     fclose(f);
 
     if(options.compile) {
+        /* assemble with NASM */
         char cmd[512];
         snprintf(cmd, sizeof cmd, "nasm -felf64 %s", options.asmfile);
         system(cmd);
+
+        /* handle the case where NASM changes *.asm to *.o */
+        size_t asmlen = strlen(options.asmfile);
+        if(asmlen > 3 && !memcmp(options.asmfile + asmlen-4, ".asm", 4))
+            options.asmfile[asmlen-4] = '\0';
+
+        /* link using GCC (for easier libc integration) */
         snprintf(cmd, sizeof cmd, "gcc -no-pie -o '%s' %s.o",
                 options.outfile, options.asmfile);
         system(cmd);
