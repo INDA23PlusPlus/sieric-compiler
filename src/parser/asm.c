@@ -3,11 +3,8 @@
 #include <stdlib.h>
 
 static inline const char *data_str(ir_instr_data_t *);
-static inline void asm_generate_binop(FILE *, const char *);
-static inline void asm_generate_relop(FILE *, ir_code_t *, const char *,
-                                      const char *);
 
-static int asm_generate_instr(FILE *, ir_code_t *, ir_instr_t *);
+static int asm_generate_instr(FILE *, ir_instr_t *);
 
 static const char asm_pre[] = ""
 "bits 64\n"
@@ -63,7 +60,7 @@ int asm_generate(FILE *f, ir_code_t *code) {
     }
 
     for(size_t i = 0; i < code->instructions->sz; ++i)
-        if((ret = asm_generate_instr(f, code, vec_get(code->instructions, i))))
+        if((ret = asm_generate_instr(f, vec_get(code->instructions, i))))
             goto ret;
 
     if(fwrite(asm_post, 1, sizeof asm_post - 1, f) != sizeof asm_post - 1) {
@@ -75,24 +72,12 @@ ret:
     return ret;
 }
 
-static inline void asm_generate_binop(FILE *f, const char *instr) {
-    fprintf(f, "  pop rbx\n  pop rax\n  %s\n", instr);
-}
+#define BINOP_PRE "  pop rbx\n  pop rax\n"
+#define UNOP_PRE "  pop rax\n"
+#define CMP_PRE "  pop rbx\n  pop rax\n  cmp rax, rbx\n"
+#define SET_POST "  movzx rax, al\n"
 
-static inline void asm_generate_relop(FILE *f, ir_code_t *code,
-                                      const char *condition, const char *jump) {
-    fprintf(f, "  pop rbx\n"
-               "  pop rax\n"
-               "%1$s"
-               "  mov rdx, 1\n"
-               "  %2$s .%3$zu\n"
-               "  mov rdx, 0\n"
-               ".%3$zu:\n"
-               "  mov rax, rdx\n",
-            condition, jump, code->num_label++);
-}
-
-static int asm_generate_instr(FILE *f, ir_code_t *code, ir_instr_t *in_) {
+static int asm_generate_instr(FILE *f, ir_instr_t *in_) {
     int ret = 0;
     union {
         ir_instr_t *i;
@@ -130,50 +115,43 @@ static int asm_generate_instr(FILE *f, ir_code_t *code, ir_instr_t *in_) {
         break;
 
     case IR_ADD:
-        asm_generate_binop(f, "add rax, rbx");
+        fprintf(f, BINOP_PRE "  add rax, rbx\n");
         break;
 
     case IR_SUB:
-        asm_generate_binop(f, "sub rax, rbx");
+        fprintf(f, BINOP_PRE "  sub rax, rbx\n");
         break;
 
     case IR_MUL:
-        asm_generate_binop(f, "mul rbx");
+        fprintf(f, BINOP_PRE "  mul rbx\n");
         break;
 
     case IR_DIV:
-        asm_generate_binop(f, "div rbx");
+        fprintf(f, BINOP_PRE "  div rbx\n");
         break;
 
     case IR_MOD:
-        asm_generate_binop(f, "div rbx");
-        fprintf(f, "  mov rax, rdx\n");
+        fprintf(f, BINOP_PRE "  div rbx\n  mov rax, rdx");
         break;
 
     case IR_BITOR:
-        asm_generate_binop(f, "or rax, rbx");
+        fprintf(f, BINOP_PRE "  or rax, rbx\n");
         break;
 
     case IR_BITAND:
-        asm_generate_binop(f, "and rax, rbx");
+        fprintf(f, BINOP_PRE "  and rax, rbx\n");
         break;
 
     case IR_BITXOR:
-        asm_generate_binop(f, "xor rax, rbx");
+        fprintf(f, BINOP_PRE "  xor rax, rbx\n");
         break;
 
     case IR_BITNOT:
-        fprintf(f, "  pop rax\n  not rax\n");
+        fprintf(f, UNOP_PRE "  not rax\n");
         break;
 
     case IR_LNOT:
-        fprintf(f, "  pop rax\n"
-                   "  mov rbx, 1\n"
-                   "  test rax, rax\n"
-                   "  jz .%1$zu\n"
-                   "  mov rbx, 0\n"
-                   ".%1$zu:\n"
-                   "  mov rax, rbx\n", code->num_label++);
+        fprintf(f, UNOP_PRE "  cmp rax, 0\n  setne al\n" SET_POST);
         break;
 
     case IR_CALL:
@@ -193,37 +171,40 @@ static int asm_generate_instr(FILE *f, ir_code_t *code, ir_instr_t *in_) {
         break;
 
     case IR_LOR:
-        asm_generate_relop(f, code, "  or rax, rbx\n  test rax, rax\n", "jnz");
+        fprintf(f, BINOP_PRE "  or rax, rbx\n"
+                             "  text rax, rax\n"
+                             "  setnz al\n" SET_POST);
         break;
 
     case IR_LAND:
-        asm_generate_relop(f, code, "  mul rbx\n"
-                                    "  or rax, rdx\n"
-                                    "  test rax, rax\n", "jnz");
+        fprintf(f, BINOP_PRE "  mul rbx\n"
+                             "  or rax, rdx\n"
+                             "  test rax, rax\n"
+                             "  setnz al\n" SET_POST);
         break;
 
     case IR_LT:
-        asm_generate_relop(f, code, "  cmp rax, rbx\n", "jl");
+        fprintf(f, CMP_PRE "  setl al\n" SET_POST);
         break;
 
     case IR_GT:
-        asm_generate_relop(f, code, "  cmp rax, rbx\n", "jg");
+        fprintf(f, CMP_PRE "  setg al\n" SET_POST);
         break;
 
     case IR_LEQ:
-        asm_generate_relop(f, code, "  cmp rax, rbx\n", "jle");
+        fprintf(f, CMP_PRE "  setle al\n" SET_POST);
         break;
 
     case IR_GEQ:
-        asm_generate_relop(f, code, "  cmp rax, rbx\n", "jge");
+        fprintf(f, CMP_PRE "  setge al\n" SET_POST);
         break;
 
     case IR_EQ:
-        asm_generate_relop(f, code, "  cmp rax, rbx\n", "je");
+        fprintf(f, CMP_PRE "  sete al\n" SET_POST);
         break;
 
     case IR_NEQ:
-        asm_generate_relop(f, code, "  cmp rax, rbx\n", "jne");
+        fprintf(f, CMP_PRE "  setne al\n" SET_POST);
         break;
 
     case IR_IF:
