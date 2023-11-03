@@ -24,7 +24,7 @@ const char *help_str = ""
 
 struct options {
     char *infile, *outfile, *asmfile;
-    int compile;
+    int compile, saveasm;
 } options;
 
 int main(int argc, char *argv[]) {
@@ -34,6 +34,7 @@ int main(int argc, char *argv[]) {
         .outfile = "./a.out",
         .asmfile = NULL,
         .compile = 1,
+        .saveasm = 0,
     };
 
     int c;
@@ -49,6 +50,7 @@ int main(int argc, char *argv[]) {
 
         case 'a':
             options.asmfile = optarg;
+            options.saveasm = 1;
             break;
 
         default:
@@ -97,11 +99,11 @@ int main(int argc, char *argv[]) {
     if(code) puts("\nCode:"), code_dump(code);
     else goto ret_free_parser;
 
-    char asm_path[] = "/tmp/dpp_XXXXXX";
+    char asm_path[] = P_tmpdir "/dpp_XXXXXX";
     if(!options.asmfile) {
         int fd;
-        if(!(fd = mkstemp(asm_path))) {
-            perror("tmpfile");
+        if((fd = mkstemp(asm_path)) == -1) {
+            perror("mkstemp");
             ret = EXIT_FAILURE;
             goto ret_free_code;
         }
@@ -127,15 +129,25 @@ int main(int argc, char *argv[]) {
         snprintf(cmd, sizeof cmd, "nasm -felf64 %s", options.asmfile);
         system(cmd);
 
-        /* handle the case where NASM changes *.asm to *.o */
-        size_t asmlen = strlen(options.asmfile);
-        if(asmlen > 3 && !memcmp(options.asmfile + asmlen-4, ".asm", 4))
-            options.asmfile[asmlen-4] = '\0';
+        /* handle the case where NASM changes extensions to *.o */
+        char *asmext = strrchr(options.asmfile, '.');
+        if(asmext) *asmext = '\0';
 
         /* link using GCC (for easier libc integration) */
-        snprintf(cmd, sizeof cmd, "gcc -no-pie -o '%s' %s.o",
-                options.outfile, options.asmfile);
-        system(cmd);
+        {
+            char buf[strlen(options.asmfile)+3];
+            sprintf(buf, "%s.o", options.asmfile);
+
+            snprintf(cmd, sizeof cmd, "gcc -no-pie -o '%s' '%s'",
+                     options.outfile, buf);
+            system(cmd);
+            unlink(buf);
+        }
+
+        /* delete temporary assembly file */
+        if(asmext) *asmext = '.';
+        if(!options.saveasm)
+            unlink(options.asmfile);
     }
 
 ret_free_code:
